@@ -1,5 +1,5 @@
 // ---------- App installée : hors ligne, mises à jour, rafraîchissement ----------
-const APP_VERSION="1.0.0";
+const APP_VERSION="1.0.1";
 
 // Bandeau « nouvelle version » : la mise à jour ne s'applique que quand tu la valides,
 // pour ne jamais recharger l'app pendant que tu coches quelque chose.

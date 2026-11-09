@@ -1,5 +1,5 @@
 // Change VERSION à chaque mise en ligne : c'est ce qui déclenche le bandeau « Nouvelle version ».
-const VERSION="rhf-1.0.0";
+const VERSION="rhf-1.0.1";
 const FILES=["./","index.html","styles.css","app.js","steps.js","pwa.js","manifest.webmanifest","icons/icon-180.png","icons/icon-192.png","icons/icon-512.png"];
 
 self.addEventListener("install",e=>{e.waitUntil(caches.open(VERSION).then(c=>c.addAll(FILES)))});

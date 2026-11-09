@@ -234,7 +234,7 @@ function vToday(){
     :next?`<div class="note">Prochain repas : ${next[1].toLowerCase()} à ${T[next[0]]}.</div>`
     :`<div class="note ok">Tous les repas du jour sont cochés.</div>`;
   const meals=SLOTS.map(([s,l])=>{const m=day[s],mm=macros(m.r,m.f),done=L.eaten&&L.eaten[s],isLate=!done&&T[s]<=now;
-    return`<div class="meal ${done?"done":""}"><div class="info" data-act="recipe" data-r="${m.r}" data-f="${fenc(m.f)}">
+    return`<div class="meal ${done?"done":""}"><div class="info" data-act="recipe" data-r="${m.r}" data-f="${fenc(m.f)}" data-ws="${ws}" data-i="${i}">
       <div class="slot">${l} · ${T[s]}${s==="collation"&&se?" · autour de la séance":""}${isLate?' <span class="badge">à prendre</span>':""}</div><div class="name">${REC[m.r].n}</div>
       <div class="muted num" style="font-size:15px">${nf(mm.k)} kcal · ${nf(mm.p)} g prot.${m.f!==1?" · quantités ajustées":""}</div></div>
       <button class="check" data-act="eat" data-s="${s}" aria-label="Marquer ${l} comme mangé">${CHECK}</button></div>`}).join("");
@@ -301,7 +301,7 @@ function vWeek(){
       <div>${SLOTS.map(([s,l])=>{const m=day[s];return`<div class="item" data-act="swap" data-i="${i}" data-s="${s}"><span class="slot" style="width:78px;flex:none">${l}</span><span class="grow">${REC[m.r].n}</span><span class="muted" aria-hidden="true">›</span></div>`}).join("")}</div>
       <div class="muted num" style="font-size:14px">${nf(t.k)} kcal · ${nf(t.p)} g protéines · ≈ ${t.cost.toFixed(2).replace(".",",")} €</div></section>`}).join("");
   return`<header><div class="eyebrow">Semaine du ${fmtShort(ws)}</div><h1>Plan des repas</h1></header>${weekSeg()}
-  <section class="card"><h2>Batch cooking</h2>${bs.map(b=>`<div><div class="eyebrow">${b.label}</div>${b.items.map(([r,a])=>`<div class="item" data-act="recipe" data-r="${r}" data-f="${fenc({p:a.p,c:a.c})}"><span class="grow">${REC[r].n}</span><span class="num">${a.n} portions</span></div>`).join("")}</div>`).join("")}
+  <section class="card"><h2>Batch cooking</h2>${bs.map(b=>`<div><div class="eyebrow">${b.label}</div>${b.items.map(([r,a])=>`<div class="item" data-act="recipe" data-r="${r}" data-f="${fenc({p:a.p,c:a.c})}" data-total="${a.n}"><span class="grow">${REC[r].n}</span><span class="num">${a.n} portions</span></div>`).join("")}</div>`).join("")}
   <div class="muted" style="font-size:14px">Le matin et la collation se font en 2 à 10 minutes. Touche un repas pour le changer.</div>
   <div class="row"><button data-act="regen">Régénérer la semaine</button><button data-act="tab" data-v="shop" class="primary">Liste de courses</button></div></section>${days}`;}
 
@@ -393,10 +393,22 @@ function vTrack(){
 function render(){renderTabs();const v={today:vToday,seance:vSeance,week:vWeek,shop:vShop,frigo:vFrigo,track:vTrack}[ui.tab];$("#app").innerHTML=v()}
 
 // ---------- Fiches ----------
-function recipeSheet(r,f){const R=REC[r],m=macros(r,f);
-  openSheet(`<div class="row"><div class="grow"><div class="eyebrow">${R.tag?"Street food · ":""}${R.batch?"Batch cooking · ":""}${R.t} min${typeof f==="object"&&f.c>2.1?" · quantités pour tout le batch":""}</div><h2 style="text-transform:none;font-size:26px;letter-spacing:0">${R.n}</h2></div><button class="ghost" data-act="close" aria-label="Fermer">✕</button></div>
-  <div class="row num" style="gap:18px"><div><div class="eyebrow">kcal</div><div style="font-size:24px">${nf(m.k)}</div></div><div><div class="eyebrow">Prot.</div><div style="font-size:24px;color:var(--prot)">${nf(m.p)} g</div></div><div><div class="eyebrow">Glucides</div><div style="font-size:24px">${nf(m.c)} g</div></div><div><div class="eyebrow">Lipides</div><div style="font-size:24px">${nf(m.f)} g</div></div></div>
-  <div>${Object.entries(R.i).map(([id,q])=>`<div class="ing"><span>${ING[id].n}${S.pantry[id]?' <span class="muted">· au frigo</span>':""}</span><span class="num">${fmtQty(id,q*qf(id,f))}</span></div>`).join("")}</div>
+// ctx = {ws,i} : un repas du plan (ta portion + le total du batch) ; {total:n} : le total d'un batch ; rien : recette seule
+function batchOf(r,ws,i){const plan=planFor(ws),g=i<3?[0,1,2]:[3,4,5,6],occ=[];
+  g.forEach(j=>["midi","soir"].forEach(s=>{if(plan.days[j][s].r===r)occ.push({j,s,f:plan.days[j][s].f})}));return occ}
+function recipeSheet(r,f,ctx){const R=REC[r];
+  const occ=ctx&&ctx.ws&&R.batch?batchOf(r,ctx.ws,ctx.i):[],batch=occ.length>1,total=ctx&&ctx.total;
+  const m=total?(()=>{const x=macros(r,f);for(const k in x)x[k]/=total;return x})():macros(r,f);
+  const sum=(id,q)=>occ.reduce((a,o)=>a+q*qf(id,o.f),0);
+  const head=total?`<div class="note"><b>Total à cuisiner pour ${total} portions.</b> Partage en ${total} boîtes égales : une boîte = un repas, à manger en entier.</div>`
+    :batch?`<div class="note"><b>Ce repas est en batch (${occ.length} portions).</b> Cuisine la colonne « À cuisiner », mange la colonne « Ta portion », et range le reste en ${occ.length-1} boîte${occ.length>2?"s":""} pour ${[...new Set(occ.filter(o=>!(o.j===ctx.i)).map(o=>JOURS[o.j].toLowerCase()))].join(", ")}.</div>`
+    :ctx?`<div class="note"><b>Ta portion :</b> tout ce qui est listé est pour ce repas, à manger en entier.</div>`:"";
+  const rows=Object.entries(R.i).map(([id,q])=>`<div class="ing"><span class="grow">${ING[id].n}${S.pantry[id]?' <span class="muted">· au frigo</span>':""}</span><span class="num" style="min-width:76px;text-align:right">${fmtQty(id,q*qf(id,f))}</span>${batch?`<span class="num muted" style="min-width:76px;text-align:right">${fmtQty(id,sum(id,q))}</span>`:""}</div>`).join("");
+  openSheet(`<div class="row"><div class="grow"><div class="eyebrow">${R.tag?"Street food · ":""}${R.batch?"Batch cooking · ":""}${R.t} min</div><h2 style="text-transform:none;font-size:26px;letter-spacing:0">${R.n}</h2></div><button class="ghost" data-act="close" aria-label="Fermer">✕</button></div>
+  <div class="row num" style="gap:18px"><div><div class="eyebrow">kcal${total?" / boîte":""}</div><div style="font-size:24px">${nf(m.k)}</div></div><div><div class="eyebrow">Prot.</div><div style="font-size:24px;color:var(--prot)">${nf(m.p)} g</div></div><div><div class="eyebrow">Glucides</div><div style="font-size:24px">${nf(m.c)} g</div></div><div><div class="eyebrow">Lipides</div><div style="font-size:24px">${nf(m.f)} g</div></div></div>
+  ${head}
+  <div>${batch?`<div class="ing eyebrow" style="border-top:0"><span class="grow">Ingrédient (cru)</span><span style="min-width:76px;text-align:right">Ta portion</span><span style="min-width:76px;text-align:right">À cuisiner</span></div>`:""}${rows}</div>
+  <div class="muted" style="font-size:13px">Poids crus, à peser avant cuisson. Les épices des étapes sont pour 1 portion${batch||total?" : multiplie-les par le nombre de portions":""}.</div>
   ${R.m?`<div class="note"><b>Matériel :</b> ${R.m}</div>`:""}
   <ol>${R.s.map(x=>`<li>${x}</li>`).join("")}</ol>
   ${R.tip?`<div class="muted" style="font-size:14px"><b>Astuce :</b> ${R.tip}</div>`:""}`)}
@@ -405,7 +417,7 @@ function swapSheet(i,s){const ws=weekStart(),plan=planFor(ws),cur=plan.days[i][s
   openSheet(`<div class="row"><div class="grow"><div class="eyebrow">${JOURS[i]} · ${SLOTS.find(x=>x[0]===s)[1]}</div><h2>Changer le repas</h2></div><button class="ghost" data-act="close" aria-label="Fermer">✕</button></div>
   <label class="row" style="font-size:15px"><input type="checkbox" id="swall" checked style="width:auto"> Remplacer aussi les autres jours où « ${REC[cur].n} » est prévu à ce repas</label>
   <div>${opts.map(r=>{const m=macros(r),c=coverage(r);return`<div class="item" data-act="pick" data-i="${i}" data-s="${s}" data-r="${r}"><span class="box" style="border-radius:50%;${r===cur?"background:var(--accent);border-color:var(--accent)":""}">${r===cur?CHECK.replace('<svg','<svg style="opacity:1"'):""}</span><span class="grow"><span style="font-weight:600">${REC[r].n}</span><br><span class="muted" style="font-size:14px">${nf(m.k)} kcal · ${nf(m.p)} g · ${REC[r].t} min${REC[r].tag?" · street food":""}${c.pct===1?" · tout au frigo":""}</span></span></div>`}).join("")}</div>
-  <button data-act="recipe" data-r="${cur}" data-f="${fenc(plan.days[i][s].f)}">Voir la recette actuelle</button>`)}
+  <button data-act="recipe" data-r="${cur}" data-f="${fenc(plan.days[i][s].f)}" data-ws="${ws}" data-i="${i}">Voir la recette actuelle</button>`)}
 
 // ---------- Événements ----------
 document.addEventListener("click",async e=>{
@@ -414,7 +426,7 @@ document.addEventListener("click",async e=>{
   if(a==="tab"){ui.tab=el.dataset.v;closeSheet();render();scrollTo(0,0)}
   else if(a==="week"){ui.week=+el.dataset.v;render()}
   else if(a==="close")closeSheet();
-  else if(a==="recipe")recipeSheet(el.dataset.r,fdec(el.dataset.f));
+  else if(a==="recipe"){const ds=el.dataset;recipeSheet(ds.r,fdec(ds.f),ds.total?{total:+ds.total}:ds.ws?{ws:ds.ws,i:+ds.i}:null)}
   else if(a==="eat"){const s=el.dataset.s,ws=monday(d),day=planFor(ws).days[(parse(d).getDay()+6)%7],L=S.log[d]||(S.log[d]={eaten:{},extras:[]});L.eaten=L.eaten||{};
     if(L.eaten[s])delete L.eaten[s];else{const m=day[s],mm=macros(m.r,m.f);L.eaten[s]={r:m.r,f:m.f,k:Math.round(mm.k),p:Math.round(mm.p)}}
     pruneLog();save();render()}
